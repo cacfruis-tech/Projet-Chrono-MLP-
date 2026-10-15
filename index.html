@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Suivi des arrêts de production</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+
+  body { background: #1e1e2e; color: #eee; padding: 20px; }
+
+  h1 { text-align: center; margin-bottom: 20px; color: #fff; }
+
+  .barre-haut { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
+
+  button {
+    padding: 10px 18px; border: none; border-radius: 8px;
+    cursor: pointer; font-size: 14px; font-weight: bold; color: #fff;
+  }
+  .btn-ajouter { background: #2f9e44; }
+  .btn-export { background: #1971c2; }
+
+  #conteneur {
+    display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;
+  }
+
+  .module {
+    background: #2b2b3d; border-radius: 12px; padding: 15px;
+    width: 380px; box-shadow: 0 4px 10px rgba(0,0,0,.4);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .module.drag-over { outline: 2px dashed #1971c2; }
+
+  .poignee { cursor: grab; color: #888; font-size: 18px; float: left; margin-right: 8px; }
+
+  h2 { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+  .nom {
+    flex: 1; background: #1e1e2e; border: 1px solid #444; color: #fff;
+    border-radius: 6px; padding: 6px; font-size: 15px;
+  }
+
+  .etat { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+  .etat.en-marche { background: #2f9e44; }
+  .etat.en-panne { background: #e03131; }
+
+  .compteur {
+    font-size: 34px; text-align: center; font-family: monospace;
+    background: #1e1e2e; border-radius: 8px; padding: 8px; color: #ffd43b;
+  }
+
+  .boutons { display: flex; gap: 10px; }
+  .btn-marche { flex: 1; background: #2f9e44; }
+  .btn-panne { flex: 1; background: #e03131; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  .zone-cause { display: flex; gap: 8px; }
+  .cause {
+    flex: 1; background: #1e1e2e; border: 1px solid #444; color: #fff;
+    border-radius: 6px; padding: 6px;
+  }
+  .btn-valider { background: #1971c2; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #444; padding: 4px; text-align: center; }
+  th { background: #1e1e2e; }
+
+  .btn-suppr { background: #862e2e; align-self: center; }
+</style>
+</head>
+<body>
+
+<h1>⚙️ Suivi des arrêts de production</h1>
+
+<div class="barre-haut">
+  <button class="btn-ajouter" onclick="ajouterModule()">➕ Ajouter un module</button>
+  <button class="btn-export" onclick="exporterExcel()">📊 Exporter Excel</button>
+</div>
+
+<div id="conteneur"></div>
+
+<script>
+// ── État global ──
+let moduleEnDrag = null;
+
+// ── Formatage du temps ──
+function formater(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = String(Math.floor(s / 3600)).padStart(2, "0");
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const sec = String(s % 60).padStart(2, "0");
+  return h + ":" + m + ":" + sec;
+}
+
+function afficherTemps(mod) {
+  mod.querySelector(".compteur").textContent = formater(mod._secondes * 1000);
+}
+
+// ── Création d'un module ──
+function ajouterModule(nom = "Module", donnees = null) {
+  const conteneur = document.getElementById("conteneur");
+
+  const mod = document.createElement("div");
+  mod.className = "module";
+  mod.innerHTML = `
+    <span class="poignee" title="Glisser pour déplacer">⠿</span>
+    <h2>
+      <input class="nom" value="${nom}">
+      <span class="etat en-marche">En marche</span>
+    </h2>
+    <div class="compteur">00:00:00</div>
+    <div class="boutons">
+      <button class="btn-marche" onclick="marquerMarche(this)">En marche</button>
+      <button class="btn-panne" onclick="marquerPanne(this)">En panne</button>
+    </div>
+    <div class="zone-cause">
+      <input class="cause" placeholder="Cause de l'arrêt...">
+      <button class="btn-valider" onclick="validerCause(this)">Valider</button>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Arrêt n°</th><th>Début</th><th>Fin</th><th>Durée</th><th>Cause</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <button class="btn-suppr" onclick="supprimerModule(this)">🗑 Supprimer</button>
+  `;
+
+  conteneur.appendChild(mod);
+
+  // État interne
+  mod._secondes = donnees ? donnees.secondes : 0;
+  mod._enPanne = donnees ? donnees.enPanne : false;
+  mod._debutPanne = null;
+
+  afficherTemps(mod);
+
+  if (mod._enPanne) {
+    mod.querySelector(".etat").className = "etat en-panne";
+    mod.querySelector(".etat").textContent = "En panne";
+    mod.querySelector(".btn-marche").disabled = false;
+    mod.querySelector(".btn-panne").disabled = true;
+    if (donnees && donnees.debutPanne) mod._debutPanne = new Date(donnees.debutPanne);
+  } else {
+    mod.querySelector(".btn-marche").disabled = true;
+  }
+
+  // Chrono
+  setInterval(() => {
+    if (mod._enPanne) {
+      mod._secondes++;
+      const derniere = mod.querySelector("tbody tr:last-child");
+      if (derniere && mod._debutPanne) {
+        derniere.children[3].textContent = formater(Date.now() - mod._debutPanne.getTime());
+      }
+      afficherTemps(mod);
+      sauvegarder();
+    }
+  }, 1000);
+
+  // ── Drag & drop ──
+  const poignee = mod.querySelector(".poignee");
+  poignee.addEventListener("mousedown", () => { moduleEnDrag = mod; mod.draggable = true; });
+  poignee.addEventListener("mouseup", () => { mod.draggable = false; });
+
+  mod.addEventListener("dragstart", e => { e.dataTransfer.setData("text", ""); moduleEnDrag = mod; });
+  mod.addEventListener("dragover", e => { e.preventDefault(); mod.classList.add("drag-over"); });
+  mod.addEventListener("dragleave", () => mod.classList.remove("drag-over"));
+  mod.addEventListener("drop", e => {
+    e.preventDefault();
+    mod.classList.remove("drag-over");
+    if (moduleEnDrag && moduleEnDrag !== mod) {
+      conteneur.insertBefore(moduleEnDrag, mod);
+      sauvegarder();
+    }
+  });
+  mod.addEventListener("dragend", () => { mod.draggable = false; });
+}
+
+// ── Boutons En marche / En panne ──
+function marquerPanne(btn) {
+  const mod = btn.closest(".module");
+  mod._enPanne = true;
+  mod._debutPanne = new Date();
+
+  mod.querySelector(".etat").className = "etat en-panne";
+  mod.querySelector(".etat").textContent = "En panne";
+  btn.disabled = true;
+  mod.querySelector(".btn-marche").disabled = false;
+
+  // Nouvelle ligne d'arrêt
+  const tbody = mod.querySelector("tbody");
+  const n = tbody.children.length + 1;
+  const tr = document.createElement("tr");
+  const heure = mod._debutPanne.toLocaleTimeString("fr-FR");
+  tr.innerHTML = `<td>${n}</td><td>${heure}</td><td>...</td><td>00:00:00</td><td>...</td>`;
+  tbody.appendChild(tr);
+  sauvegarder();
+}
+
+function marquerMarche(btn) {
+  const mod = btn.closest(".module");
+  mod._enPanne = false;
+
+  mod.querySelector(".etat").className = "etat en-marche";
+  mod.querySelector(".etat").textContent = "En marche";
+  btn.disabled = true;
+  mod.querySelector(".btn-panne").disabled = false;
+
+  // Compléter la dernière ligne
+  const derniere = mod.querySelector("tbody tr:last-child");
+  if (derniere && mod._debutPanne) {
+    const fin = new Date();
+    derniere.children[2].textContent = fin.toLocaleTimeString("fr-FR");
+    derniere.children[3].textContent = formater(fin - mod._debutPanne);
+    mod._debutPanne = null;
+  }
+  sauvegarder();
+}
+
+// ── Validation de la cause ──
+function validerCause(btn) {
+  const mod = btn.closest(".module");
+  const cause = mod.querySelector(".cause").value.trim();
+  const derniere = mod.querySelector("tbody tr:last-child");
+  if (derniere && cause) {
+    derniere.children[4].textContent = cause;
+    mod.querySelector(".cause").value = "";
+    sauvegarder();
+  }
+}
+
+// ── Suppression ──
+function supprimerModule(btn) {
+  if (confirm("Supprimer ce module ?")) {
+    btn.closest(".module").remove();
+    sauvegarder();
+  }
+}
+
+// ── Export Excel (disposition exacte demandée) ──
+function exporterExcel() {
+  const lignes = [];
+
+  document.querySelectorAll(".module").forEach(mod => {
+    const nom = mod.querySelector(".nom").value;
+    const trs = mod.querySelectorAll("tbody tr");
+    let totalSecondes = 0;
+    let premiereLigne = true;
+
+    trs.forEach(tr => {
+      const c = tr.querySelectorAll("td");
+      const t = c[3].textContent.split(":");
+      totalSecondes += (+t[0]) * 3600 + (+t[1]) * 60 + (+t[2]);
+
+      lignes.push([
+        premiereLigne ? nom : "",
+        c[0].textContent,
+        c[1].textContent,
+        c[2].textContent,
+        c[3].textContent,
+        c[4].textContent
+      ]);
+      premiereLigne = false;
+    });
+
+    // Total : nb pannes en B, durée en E
+    const h = Math.floor(totalSecondes / 3600);
+    const m = Math.floor((totalSecondes % 3600) / 60);
+    const s = totalSecondes % 60;
+    const dureeTotale = String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+
+    lignes.push(["Total", trs.length, "", "", dureeTotale, ""]);
+    lignes.push(["", "", "", "", "", ""]); // espace entre modules
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(lignes);
+  ws["!cols"] = [{ wch: 15 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+
+  for (const addr in ws) {
+    if (addr[0] === "!") continue;
+    ws[addr].s = { border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } } };
+    if (ws[addr].v === "Total") {
+      ws[addr].s = { font: { bold: true }, border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } } };
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, "Arrêts");
+  XLSX.writeFile(wb, "arrets_" + new Date().toLocaleDateString("fr-FR").replace(/\//g, "-") + ".xlsx");
+}
+
+// ── Sauvegarde / chargement ──
+function sauvegarder() {
+  const data = [];
+  document.querySelectorAll(".module").forEach(mod => {
+    data.push({
+      nom: mod.querySelector(".nom").value,
+      secondes: mod._secondes,
+      enPanne: mod._enPanne,
+      debutPanne: mod._debutPanne ? mod._debutPanne.getTime() : null,
+      arrets: Array.from(mod.querySelectorAll("tbody tr")).map(tr =>
+        Array.from(tr.querySelectorAll("td")).map(td => td.textContent)
+      )
+    });
+  });
+  localStorage.setItem("suiviArrets", JSON.stringify(data));
+}
+
+function charger() {
+  const data = JSON.parse(localStorage.getItem("suiviArrets") || "[]");
+  if (data.length === 0) {
+    ajouterModule();
+  } else {
+    data.forEach(d => {
+      ajouterModule(d.nom, d);
+      const mod = document.getElementById("conteneur").lastChild;
+      const tbody = mod.querySelector("tbody");
+
+      // Sécurité : anciennes sauvegardes sans "arrets"
+      const arrets = Array.isArray(d.arrets) ? d.arrets : [];
+      arrets.forEach(a => {
+        const tr = document.createElement("tr");
+        a.forEach(v => { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); });
+        tbody.appendChild(tr);
+      });
+    });
+  }
+}
+
+charger();
+</script>
+
+</body>
+</html>
