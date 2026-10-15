@@ -6,366 +6,244 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
-
-  html, body {
-    width: 100%; height: 100%;
-    overflow: hidden;              /* ❌ aucune barre de défilement */
-    background: #1e1e2e;
-  }
-
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1e1e2e; }
   body { display: flex; flex-direction: column; color: #eee; }
-
-  h1 { text-align: center; padding: 10px 0 6px; color: #fff; font-size: 22px; }
-
+  h1 { text-align: center; padding: 10px 0 6px; font-size: 22px; }
   .barre-haut { display: flex; gap: 10px; justify-content: center; padding-bottom: 10px; }
-
-  button {
-    padding: 10px 18px; border: none; border-radius: 8px;
-    cursor: pointer; font-size: 14px; font-weight: bold; color: #fff;
-  }
+  button { padding: 10px 18px; border: none; border-radius: 8px; cursor: pointer;
+           font-size: 14px; font-weight: bold; color: #fff; }
   .btn-ajouter { background: #2f9e44; }
-  .btn-export { background: #1971c2; }
+  .btn-export  { background: #1971c2; }
 
-  /* ===== Le tableau (zone des post-its) ===== */
-  #tableau {
-    flex: 1;
-    position: relative;
-    overflow: hidden;              /* ❌ pas de scroll ici non plus */
-  }
+  #tableau { flex: 1; position: relative; overflow: hidden; margin: 0 10px 10px;
+             background: repeating-linear-gradient(#26263a 0 1px, transparent 1px 30px),
+                         repeating-linear-gradient(90deg, #26263a 0 1px, transparent 1px 30px);
+             border-radius: 12px; }
 
-  /* ===== Un post-it = un module ===== */
-  .module {
-    position: absolute;
-    background: #2b2b3d;
-    border-radius: 12px;
-    padding: 15px;
-    box-shadow: 0 4px 10px rgba(0,0,0,.4);
-    display: flex; flex-direction: column; gap: 10px;
-    min-width: 280px; min-height: 260px;
-  }
-  .module.en-deplacement { box-shadow: 0 10px 25px rgba(0,0,0,.7); opacity: .9; }
+  .module { position: absolute; background: #2b2b3d; border-radius: 12px; padding: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 8px;
+            min-width: 280px; min-height: 260px; }
+  .poignee { cursor: grab; color: #888; font-size: 18px; text-align: center;
+             background: #1e1e2e; border-radius: 6px; padding: 2px 0; user-select: none; }
+  .module.deplace { opacity: .9; box-shadow: 0 10px 25px rgba(0,0,0,.7); }
+  h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+  .nom { flex: 1; background: #1e1e2e; border: 1px solid #444; color: #fff;
+         border-radius: 6px; padding: 6px; font-size: 15px; min-width: 0; }
+  .suppr { background: #c92a2a; border: none; color: #fff; border-radius: 6px;
+           cursor: pointer; padding: 5px 9px; }
+  .chrono { font-size: 26px; text-align: center; font-weight: bold; font-family: monospace; }
+  .boutons { display: flex; gap: 8px; }
+  .btn-marche { flex: 1; background: #2f9e44; padding: 10px 0; }
+  .btn-panne  { flex: 1; background: #e03131; padding: 10px 0; }
+  .btn-zero   { background: #555; padding: 8px 0; }
 
-  /* Poignée pour déplacer */
-  .poignee {
-    cursor: grab;
-    color: #888; font-size: 20px;
-    user-select: none;
-    text-align: center;
-    background: #1e1e2e;
-    border-radius: 6px;
-    padding: 2px 0;
-  }
-  .module.en-deplacement .poignee { cursor: grabbing; }
+  .tableau-arrets { flex: 1; overflow: hidden; border-radius: 8px; }
+  table { width: 100%; height: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #444; padding: 4px; text-align: center; }
+  th { background: #1e1e2e; }
 
-  h2 { display: flex; align-items: center; gap: 10px; font-size: 16px; }
-  .nom {
-    flex: 1; background: #1e1e2e; border: 1px solid #444; color: #fff;
-    border-radius: 6px; padding: 6px; font-size: 15px; min-width: 0;
-  }
-
-  .etat { padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-  .etat.en-marche { background: #2f9e44; }
-  .etat.en-panne { background: #e03131; }
-
-  .compteur {
-    font-size: 32px; text-align: center; font-family: monospace;
-    background: #1e1e2e; border-radius: 8px; padding: 8px; color: #ffd43b;
-  }
-
-  .boutons { display: flex; gap: 10px; }
-  .btn-marche { flex: 1; background: #2f9e44; }
-  .btn-panne { flex: 1; background: #e03131; }
-  button:disabled { opacity: .4; cursor: not-allowed; }
-
-  .zone-cause { display: flex; gap: 8px; }
-  .cause {
-    flex: 1; background: #1e1e2e; border: 1px solid #444; color: #fff;
-    border-radius: 6px; padding: 8px; font-size: 14px; min-width: 0;
-  }
-  .cause:focus { outline: none; border-color: #1971c2; }
-
-  .tableau-wrap { flex: 1; overflow: auto; min-height: 0; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { border: 1px solid #3d3d55; padding: 5px 8px; text-align: left; }
-  th { background: #1e1e2e; color: #aaa; }
-  td.action { color: #e03131; cursor: pointer; font-weight: bold; text-align: center; }
-  tr.ligne-encours td { background: #4a3320; }
-
-  /* ===== Poignée de redimensionnement ===== */
-  .resize {
-    position: absolute; right: 0; bottom: 0;
-    width: 18px; height: 18px;
-    cursor: nwse-resize;
-    border-right: 3px solid #1971c2;
-    border-bottom: 3px solid #1971c2;
-    border-bottom-right-radius: 10px;
-  }
-
-  .btn-suppr-module {
-    position: absolute; top: 6px; right: 8px;
-    background: none; color: #e03131; font-size: 16px;
-    padding: 2px 6px; font-weight: bold;
-  }
+  .poignee-redim { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
+                   cursor: nwse-resize;
+                   background: linear-gradient(135deg, transparent 40%, #1971c2 40%); }
 </style>
 </head>
 <body>
 
-<h1>⚙️ Suivi des arrêts de production</h1>
-
+<h1>📋 Suivi des arrêts de production</h1>
 <div class="barre-haut">
-  <button class="btn-ajouter" onclick="ajouterModule()">+ Ajouter un module</button>
-  <button class="btn-export" onclick="exporterExcel()">📊 Exporter en Excel</button>
+  <button class="btn-ajouter" onclick="ajouterModule()">➕ Ajouter un module</button>
+  <button class="btn-export" onclick="exporter()">📊 Exporter en Excel</button>
 </div>
-
 <div id="tableau"></div>
 
 <script>
-let compteur = 1;
+const tableau = document.getElementById("tableau");
+let compteur = 0;
 
-function ajouterModule(nom = "Module " + compteur, donnees = null) {
+// ===== Ajouter un module =====
+function ajouterModule(nomInitial = "", data = null) {
+  compteur++;
   const mod = document.createElement("div");
   mod.className = "module";
-  mod._secondes = donnees ? donnees.secondes : 0;
-  mod._enPanne = false;
+  mod._secondes = data ? data.secondes : 0;
+  mod._enPanne = data ? data.enPanne : false;
   mod._debutPanne = null;
 
-  // Position et taille (sauvegardées ou valeur par défaut en cascade)
-  const tableau = document.getElementById("tableau");
-  const index = tableau.children.length;
-  mod.style.width  = (donnees && donnees.largeur)  ? donnees.largeur  : "380px";
-  mod.style.height = (donnees && donnees.hauteur) ? donnees.hauteur : "480px";
-  mod.style.left   = (donnees && donnees.posX !== undefined) ? donnees.posX + "px" : (30 + (index % 4) * 400) + "px";
-  mod.style.top    = (donnees && donnees.posY !== undefined) ? donnees.posY + "px" : (20 + Math.floor(index / 4) * 500) + "px";
+  const posX = data ? data.posX : 20 + (compteur - 1) * 40;
+  const posY = data ? data.posY : 20 + (compteur - 1) * 40;
+  mod.style.left = posX + "px";
+  mod.style.top = posY + "px";
+  mod.style.width = data ? data.largeur : "320px";
+  mod.style.height = data ? data.hauteur : "340px";
 
   mod.innerHTML = `
-    <button class="btn-suppr-module" title="Supprimer ce module">✖</button>
-    <div class="poignee">⠿⠿⠿⠿⠿⠿</div>
+    <div class="poignee">⠿⠿⠿</div>
     <h2>
-      <input class="nom" value="${donnees ? donnees.nom : nom.replace(/"/g, """)}">
-      <span class="etat en-marche">EN MARCHE</span>
+      <input class="nom" placeholder="Nom du module" value="${nomInitial || "Module " + compteur}">
+      <span class="etat"></span>
+      <button class="suppr">✖</button>
     </h2>
-    <div class="compteur">00:00:00</div>
+    <div class="chrono">00:00:00</div>
     <div class="boutons">
-      <button class="btn-marche" disabled>En marche</button>
+      <button class="btn-marche">En marche</button>
       <button class="btn-panne">En panne</button>
     </div>
-    <div class="zone-cause">
-      <input class="cause" placeholder="Cause de l'arrêt (Entrée pour valider)">
-    </div>
-    <div class="tableau-wrap">
+    <button class="btn-zero">↺ Remettre le chrono à zéro</button>
+    <div class="tableau-arrets">
       <table>
-        <thead>
-          <tr><th>Date</th><th>Début</th><th>Fin</th><th>Durée</th><th>Cause</th><th></th></tr>
-        </thead>
+        <thead><tr><th>Début</th><th>Fin</th><th>Durée</th><th>Cause</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
-    <div class="resize"></div>
-  `;
+    <div class="poignee-redim"></div>`;
 
+  tableau.appendChild(mod);
+
+  // ----- Boutons -----
   const btnMarche = mod.querySelector(".btn-marche");
   const btnPanne = mod.querySelector(".btn-panne");
   const etat = mod.querySelector(".etat");
-  const compteurEl = mod.querySelector(".compteur");
-  const tbody = mod.querySelector("tbody");
-  const champCause = mod.querySelector(".cause");
-
-  let ligneEnCours = null;
-
-  function duree(s) {
-    const h = String(Math.floor(s / 3600)).padStart(2, "0");
-    const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
-    const sec = String(s % 60).padStart(2, "0");
-    return h + ":" + m + ":" + sec;
-  }
+  const chrono = mod.querySelector(".chrono");
 
   function majAffichage() {
-    compteurEl.textContent = duree(mod._secondes);
-  }
-
-  btnPanne.addEventListener("click", () => {
-    mod._enPanne = true;
-    mod._debutPanne = new Date();
-    btnPanne.disabled = true;
-    btnMarche.disabled = false;
-    etat.textContent = "EN PANNE";
-    etat.className = "etat en-panne";
-
-    ligneEnCours = document.createElement("tr");
-    ligneEnCours.className = "ligne-encours";
-    ligneEnCours.innerHTML = `
-      <td>${mod._debutPanne.toLocaleDateString("fr-FR")}</td>
-      <td>${mod._debutPanne.toLocaleTimeString("fr-FR")}</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td class="action">✖</td>
-    `;
-    tbody.appendChild(ligneEnCours);
-  });
-
-  btnMarche.addEventListener("click", () => {
-    if (!mod._enPanne) return;
-    mod._secondes += Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
-    mod._enPanne = false;
-    mod._debutPanne = null;
-    btnPanne.disabled = false;
-    btnMarche.disabled = true;
-    etat.textContent = "EN MARCHE";
-    etat.className = "etat en-marche";
-
-    if (ligneEnCours) {
-      const fin = new Date();
-      ligneEnCours.children[2].textContent = fin.toLocaleTimeString("fr-FR");
-      ligneEnCours.children[3].textContent = duree(mod._secondes);
-      ligneEnCours.classList.remove("ligne-encours");
-      ligneEnCours = null;
-    }
-  });
-
-  champCause.addEventListener("keydown", e => {
-    if (e.key === "Enter" && ligneEnCours && champCause.value.trim() !== "") {
-      ligneEnCours.children[4].textContent = champCause.value.trim();
-      champCause.value = "";
-    }
-  });
-
-  tbody.addEventListener("click", e => {
-    if (e.target.classList.contains("action")) e.target.closest("tr").remove();
-  });
-
-  // Charge les anciennes lignes d'arrêt
-  if (donnees && donnees.arrets) {
-    donnees.arrets.forEach(cells => {
-      const tr = document.createElement("tr");
-      cells.forEach(c => {
-        const td = document.createElement("td");
-        td.textContent = c;
-        tr.appendChild(td);
-      });
-      const tdAction = document.createElement("td");
-      tdAction.className = "action";
-      tdAction.textContent = "✖";
-      tr.appendChild(tdAction);
-      tbody.appendChild(tr);
-    });
-  }
-
-  setInterval(() => {
     if (mod._enPanne) {
-      compteurEl.textContent = duree(mod._secondes + Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000));
+      chrono.textContent = fmt(mod._secondes + Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000));
+      chrono.style.color = "#ff6b6b";
+      etat.textContent = "EN PANNE"; etat.className = "etat";
+      etat.style.background = "#e03131";
+    } else {
+      chrono.textContent = fmt(mod._secondes);
+      chrono.style.color = "#fff";
+      etat.textContent = "EN MARCHE"; etat.className = "etat en-marche";
     }
-  }, 1000);
+  }
+
+  btnMarche.onclick = () => {
+    if (mod._enPanne) {
+      const duree = Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
+      mod._secondes += duree;
+      const now = new Date();
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${mod._debutPanne.toLocaleTimeString("fr-FR")}</td>
+        <td>${now.toLocaleTimeString("fr-FR")}</td>
+        <td>${fmt(duree)}</td>
+        <td contenteditable></td><td style="display:none"></td>`;
+      mod.querySelector("tbody").appendChild(tr);
+      mod._enPanne = false; mod._debutPanne = null;
+      majAffichage(); sauvegarder();
+    }
+  };
+
+  btnPanne.onclick = () => {
+    if (!mod._enPanne) {
+      mod._enPanne = true; mod._debutPanne = new Date();
+      majAffichage(); sauvegarder();
+    }
+  };
+
+  mod.querySelector(".btn-zero").onclick = () => {
+    mod._secondes = 0; mod._enPanne = false; mod._debutPanne = null;
+    mod.querySelector("tbody").innerHTML = "";
+    majAffichage(); sauvegarder();
+  };
+
+  mod.querySelector(".suppr").onclick = () => {
+    if (confirm("Supprimer ce module ?")) { mod.remove(); sauvegarder(); }
+  };
+
+  mod.querySelector(".nom").addEventListener("input", sauvegarder);
+
+  // ----- Déplacement -----
+  const poignee = mod.querySelector(".poignee");
+  poignee.addEventListener("mousedown", e => {
+    e.preventDefault();
+    const startX = e.clientX, startY = e.clientY;
+    const startL = mod.offsetLeft, startT = mod.offsetTop;
+    mod.classList.add("deplace");
+
+    function bouger(ev) {
+      let l = startL + ev.clientX - startX;
+      let t = startT + ev.clientY - startY;
+      l = Math.max(0, Math.min(l, tableau.clientWidth - mod.offsetWidth));
+      t = Math.max(0, Math.min(t, tableau.clientHeight - mod.offsetHeight));
+      mod.style.left = l + "px"; mod.style.top = t + "px";
+    }
+    function relacher() {
+      document.removeEventListener("mousemove", bouger);
+      document.removeEventListener("mouseup", relacher);
+      mod.classList.remove("deplace");
+      sauvegarder();
+    }
+    document.addEventListener("mousemove", bouger);
+    document.addEventListener("mouseup", relacher);
+  });
+
+  // ----- Redimensionnement -----
+  const redim = mod.querySelector(".poignee-redim");
+  redim.addEventListener("mousedown", e => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX, startY = e.clientY;
+    const startW = mod.offsetWidth, startH = mod.offsetHeight;
+
+    function bouger(ev) {
+      mod.style.width = Math.max(280, startW + ev.clientX - startX) + "px";
+      mod.style.height = Math.max(260, startH + ev.clientY - startY) + "px";
+    }
+    function relacher() {
+      document.removeEventListener("mousemove", bouger);
+      document.removeEventListener("mouseup", relacher);
+      sauvegarder();
+    }
+    document.addEventListener("mousemove", bouger);
+    document.addEventListener("mouseup", relacher);
+  });
 
   majAffichage();
-  activerDeplacement(mod);
-  activerRedimensionnement(mod);
-
-  mod.querySelector(".btn-suppr-module").addEventListener("click", () => {
-    if (confirm("Supprimer ce module et ses arrêts ?")) mod.remove();
-  });
-
-  tableau.appendChild(mod);
-  compteur++;
+  return mod;
 }
 
-// ===== Déplacement libre (post-it) =====
-function activerDeplacement(mod) {
-  const poignee = mod.querySelector(".poignee");
-  poignee.addEventListener("pointerdown", e => {
-    e.preventDefault();
-    const rect = mod.getBoundingClientRect();
-    const parent = document.getElementById("tableau").getBoundingClientRect();
-    const decalX = e.clientX - rect.left;
-    const decalY = e.clientY - rect.top;
-    mod.classList.add("en-deplacement");
-
-    function bouger(ev) {
-      let x = ev.clientX - parent.left - decalX;
-      let y = ev.clientY - parent.top - decalY;
-      // Empêche de sortir du tableau
-      x = Math.max(0, Math.min(x, parent.width - rect.width));
-      y = Math.max(0, Math.min(y, parent.height - rect.height));
-      mod.style.left = x + "px";
-      mod.style.top = y + "px";
-    }
-
-    function relacher() {
-      mod.classList.remove("en-deplacement");
-      document.removeEventListener("pointermove", bouger);
-      document.removeEventListener("pointerup", relacher);
-    }
-
-    document.addEventListener("pointermove", bouger);
-    document.addEventListener("pointerup", relacher);
-  });
-}
-
-// ===== Redimensionnement =====
-function activerRedimensionnement(mod) {
-  const poignee = mod.querySelector(".resize");
-  poignee.addEventListener("pointerdown", e => {
-    e.preventDefault();
-    e.stopPropagation();
-    const largeurDebut = mod.offsetWidth;
-    const hauteurDebut = mod.offsetHeight;
-    const xDebut = e.clientX;
-    const yDebut = e.clientY;
-
-    function bouger(ev) {
-      mod.style.width  = Math.max(280, largeurDebut + (ev.clientX - xDebut)) + "px";
-      mod.style.height = Math.max(260, hauteurDebut + (ev.clientY - yDebut)) + "px";
-    }
-
-    function relacher() {
-      document.removeEventListener("pointermove", bouger);
-      document.removeEventListener("pointerup", relacher);
-    }
-
-    document.addEventListener("pointermove", bouger);
-    document.addEventListener("pointerup", relacher);
-  });
+function fmt(s) {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
 }
 
 // ===== Export Excel =====
-function exporterExcel() {
-  const lignes = [["Module", "Date", "Début", "Fin", "Durée", "Cause"]];
+function exporter() {
+  const lignes = [["Module", "Début", "Fin", "Durée", "Cause", "Temps total d'arrêt"]];
   let totalGlobal = 0;
 
-  function duree(s) {
-    const h = String(Math.floor(s / 3600)).padStart(2, "0");
-    const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
-    const sec = String(s % 60).padStart(2, "0");
-    return h + ":" + m + ":" + sec;
-  }
-
   document.querySelectorAll(".module").forEach(mod => {
-    let secondesModule = mod._secondes;
+    let secondes = mod._secondes;
     if (mod._enPanne && mod._debutPanne) {
-      secondesModule += Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
+      secondes += Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
     }
+    totalGlobal += secondes;
     const nom = mod.querySelector(".nom").value;
-    Array.from(mod.querySelectorAll("tbody tr")).forEach(tr => {
-      const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent);
-      const [h, m, s] = (cells[3] || "0:0:0").split(":").map(Number);
-      lignes.push([nom, ...cells]);
-    });
-    if (secondesModule > 0) lignes.push([nom, "Total", "", "", duree(secondesModule), ""]);
-    totalGlobal += secondesModule;
+
+    const trs = mod.querySelectorAll("tbody tr");
+    if (trs.length === 0) {
+      lignes.push([nom, "", "", "", "", fmt(secondes)]);
+    } else {
+      trs.forEach((tr, i) => {
+        const tds = tr.querySelectorAll("td");
+        lignes.push([i === 0 ? nom : "", tds[0].textContent, tds[1].textContent,
+                     tds[2].textContent, tds[3].textContent, i === 0 ? fmt(secondes) : ""]);
+      });
+    }
+    lignes.push(["", "", "", "", "", ""]);
   });
 
-  lignes.push(["TOTAL GÉNÉRAL", "", "", "", duree(totalGlobal), ""]);
+  lignes.push(["TOTAL GÉNÉRAL", "", "", "", "", fmt(totalGlobal)]);
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(lignes);
-  ws["!cols"] = [{ wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+  ws["!cols"] = [{ wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 25 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, ws, "Arrêts");
   XLSX.writeFile(wb, "arrets_" + new Date().toLocaleDateString("fr-FR").replace(/\//g, "-") + ".xlsx");
 }
 
-// ===== Sauvegarde =====
+// ===== Sauvegarde / Chargement =====
 function sauvegarder() {
-  const tableau = document.getElementById("tableau");
   const data = [];
   document.querySelectorAll(".module").forEach(mod => {
     if (mod._enPanne && mod._debutPanne) {
@@ -381,25 +259,19 @@ function sauvegarder() {
       largeur: mod.style.width,
       hauteur: mod.style.height,
       arrets: Array.from(mod.querySelectorAll("tbody tr")).map(tr =>
-        Array.from(tr.querySelectorAll("td")).slice(0, 5).map(td => td.textContent)
-      )
+        Array.from(tr.querySelectorAll("td")).slice(0, 4).map(td => td.textContent))
     });
   });
   localStorage.setItem("suiviArrets", JSON.stringify(data));
 }
 
-// ===== Chargement =====
 function charger() {
   const data = JSON.parse(localStorage.getItem("suiviArrets") || "[]");
-  if (data.length === 0) {
-    ajouterModule();
-  } else {
-    data.forEach(d => ajouterModule(d.nom, d));
-  }
+  if (data.length === 0) ajouterModule();
+  else data.forEach(d => ajouterModule(d.nom, d));
 }
 
 charger();
-
 setInterval(sauvegarder, 30000);
 window.addEventListener("beforeunload", sauvegarder);
 </script>
