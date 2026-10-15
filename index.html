@@ -1,13 +1,9 @@
-// ════════════════ DÉBUT HTML ════════════════
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <title>Suivi des arrêts de production</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
-<!-- ════════════════ DÉBUT CSS ════════════════ -->
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
 
@@ -73,8 +69,6 @@
 
   .btn-suppr { background: #862e2e; align-self: center; }
 </style>
-<!-- ════════════════ FIN CSS ════════════════ -->
-
 </head>
 <body>
 
@@ -87,7 +81,6 @@
 
 <div id="conteneur"></div>
 
-<!-- ════════════════ DÉBUT JAVASCRIPT ════════════════ -->
 <script>
 let compteur = 1;
 
@@ -151,7 +144,7 @@ function ajouterModule(nom = "Module " + compteur, data = null) {
     return `${h}:${m}:${s}`;
   }
 
-  // ── En panne : le chrono DÉMARRE ──
+  // En panne : le chrono DÉMARRE
   btnPanne.onclick = () => {
     mod._enPanne = true;
     mod._debutPanne = new Date();
@@ -162,7 +155,7 @@ function ajouterModule(nom = "Module " + compteur, data = null) {
     causeInput.value = "";
   };
 
-  // ── En marche : le chrono S'ARRÊTE et on enregistre l'arrêt ──
+  // En marche : le chrono S'ARRÊTE et on enregistre l'arrêt
   btnMarche.onclick = () => {
     if (!mod._enPanne) return;
     mod._enPanne = false;
@@ -187,7 +180,6 @@ function ajouterModule(nom = "Module " + compteur, data = null) {
   };
 
   btnValider.onclick = () => {
-    // Valider la cause sans changer l'état (optionnel : ajout direct d'une ligne)
     if (mod._enPanne && causeInput.value.trim() !== "") {
       causeInput.style.borderColor = "#2f9e44";
       setTimeout(() => causeInput.style.borderColor = "", 800);
@@ -201,7 +193,7 @@ function ajouterModule(nom = "Module " + compteur, data = null) {
     }
   };
 
-  // ── Glisser-déposer pour réorganiser ──
+  // Glisser-déposer pour réorganiser
   const poignee = mod.querySelector(".poignee");
   poignee.addEventListener("dragstart", e => {
     e.dataTransfer.setData("text/plain", Array.from(mod.parentNode.children).indexOf(mod));
@@ -225,11 +217,11 @@ function ajouterModule(nom = "Module " + compteur, data = null) {
 
   document.getElementById("conteneur").appendChild(mod);
 
-  // ── Restauration de la taille du module ──
+  // Restauration de la taille du module
   if (data && data.largeur) mod.style.width = data.largeur;
   if (data && data.hauteur) mod.style.height = data.hauteur;
 
-  // ── Restauration de l'état ──
+  // Restauration de l'état
   if (data) {
     mod._secondes = data.secondes || 0;
     nbArrets = Array.isArray(data.arrets) ? data.arrets.length : 0;
@@ -245,7 +237,7 @@ function ajouterModule(nom = "Module " + compteur, data = null) {
     }
   }
 
-  // ── Timer global du module ──
+  // Timer global du module
   setInterval(() => {
     if (mod._enPanne && mod._debutPanne) {
       const total = mod._secondes + Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
@@ -259,7 +251,7 @@ function ajouterModule(nom = "Module " + compteur, data = null) {
   majCompteur();
 }
 
-// ── Export Excel ──
+// Export Excel
 function exporterExcel() {
   const lignes = [["Module", "Arrêt n°", "Début", "Fin", "Durée", "Cause"]];
   let totalGlobal = 0;
@@ -288,11 +280,10 @@ function exporterExcel() {
   XLSX.writeFile(wb, "arrets_" + new Date().toLocaleDateString("fr-FR").replace(/\//g, "-") + ".xlsx");
 }
 
-// ── Sauvegarde (avec correction du double comptage) ──
+// Sauvegarde (avec correction du double comptage)
 function sauvegarder() {
   const data = [];
   document.querySelectorAll(".module").forEach(mod => {
-    // Si en panne, on fige le temps écoulé AVANT de sauvegarder
     if (mod._enPanne && mod._debutPanne) {
       mod._secondes += Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
       mod._debutPanne = new Date();
@@ -312,7 +303,7 @@ function sauvegarder() {
   localStorage.setItem("suiviArrets", JSON.stringify(data));
 }
 
-// ── Chargement ──
+// Chargement
 function charger() {
   const data = JSON.parse(localStorage.getItem("suiviArrets") || "[]");
   if (data.length === 0) {
@@ -324,14 +315,12 @@ function charger() {
 
 charger();
 
-// ── Sauvegarde automatique toutes les 30 secondes ──
+// Sauvegarde automatique toutes les 30 secondes
 setInterval(sauvegarder, 30000);
 
-// ── Sauvegarde à la fermeture de la page ──
+// Sauvegarde à la fermeture de la page
 window.addEventListener("beforeunload", sauvegarder);
 </script>
-<!-- ════════════════ FIN JAVASCRIPT ════════════════ -->
 
 </body>
 </html>
-<!-- ════════════════ FIN HTML ════════════════ -->
