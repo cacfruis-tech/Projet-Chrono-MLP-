@@ -61,7 +61,6 @@
     flex: 1; background: #1e1e2e; border: 1px solid #444; color: #fff;
     border-radius: 6px; padding: 6px;
   }
-  .btn-valider { background: #1971c2; }
 
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td { border: 1px solid #444; padding: 4px; text-align: center; }
@@ -72,215 +71,219 @@
 </head>
 <body>
 
-<h1>⚙️ Suivi des arrêts de production</h1>
+<h1>Suivi des arrêts de production</h1>
 
 <div class="barre-haut">
-  <button class="btn-ajouter" onclick="ajouterModule()">➕ Ajouter un module</button>
-  <button class="btn-export" onclick="exporterExcel()">📊 Exporter Excel</button>
+  <button class="btn-ajouter" onclick="ajouterModule()">+ Ajouter un module</button>
+  <button class="btn-export" onclick="exporterExcel()">📊 Exporter en Excel</button>
 </div>
 
 <div id="conteneur"></div>
 
 <script>
-let compteur = 1;
+const conteneur = document.getElementById("conteneur");
+let moduleDeplace = null;
 
-function ajouterModule(nom = "Module " + compteur, data = null) {
-  compteur++;
+function duree(s) {
+  s = Math.max(0, s);
+  const h = String(Math.floor(s / 3600)).padStart(2, "0");
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const sec = String(s % 60).padStart(2, "0");
+  return h + ":" + m + ":" + sec;
+}
 
+// Création d'un module
+function ajouterModule(nom = "Machine " + (conteneur.children.length + 1), data = null) {
   const mod = document.createElement("div");
   mod.className = "module";
-  mod._secondes = 0;
-  mod._enPanne = false;
-  mod._debutPanne = null;
+  mod.draggable = true;
 
   mod.innerHTML = `
     <h2>
-      <span class="poignee" draggable="true">⠿</span>
+      <span class="poignee">⠿</span>
       <input class="nom" value="${nom}">
-      <span class="etat en-marche">En marche</span>
+      <span class="etat en-marche">EN MARCHE</span>
     </h2>
     <div class="compteur">00:00:00</div>
     <div class="boutons">
-      <button class="btn-marche" disabled>En marche</button>
-      <button class="btn-panne">En panne</button>
+      <button class="btn-marche" disabled>▶ Marche</button>
+      <button class="btn-panne">⏸ Panne</button>
     </div>
     <div class="zone-cause">
-      <input class="cause" placeholder="Cause de l'arrêt...">
-      <button class="btn-valider">Valider</button>
+      <input class="cause" placeholder="Cause de l'arrêt (Entrée pour valider)">
     </div>
     <table>
       <thead>
-        <tr><th>Arrêt n°</th><th>Début</th><th>Fin</th><th>Durée</th><th>Cause</th></tr>
+        <tr><th>Date</th><th>Heure</th><th>Fin</th><th>Durée</th><th>Cause</th></tr>
       </thead>
       <tbody></tbody>
     </table>
-    <button class="btn-suppr">🗑 Supprimer</button>
+    <button class="btn-suppr">🗑 Supprimer le module</button>
   `;
 
   const etat = mod.querySelector(".etat");
-  const compteurEl = mod.querySelector(".compteur");
+  const compteur = mod.querySelector(".compteur");
   const btnMarche = mod.querySelector(".btn-marche");
   const btnPanne = mod.querySelector(".btn-panne");
-  const causeInput = mod.querySelector(".cause");
-  const btnValider = mod.querySelector(".btn-valider");
+  const cause = mod.querySelector(".cause");
   const tbody = mod.querySelector("tbody");
-  let nbArrets = 0;
 
-  function majCompteur() {
-    const h = String(Math.floor(mod._secondes / 3600)).padStart(2, "0");
-    const m = String(Math.floor((mod._secondes % 3600) / 60)).padStart(2, "0");
-    const s = String(mod._secondes % 60).padStart(2, "0");
-    compteurEl.textContent = `${h}:${m}:${s}`;
+  // État interne du chrono
+  mod._secondes = 0;
+  mod._enPanne = false;
+  mod._debutPanne = null;
+  mod._ligneEnCours = null;
+
+  // Restauration des données
+  if (data) {
+    mod._secondes = data.secondes || 0;
+    mod._enPanne = data.enPanne || false;
+    if (data.debutPanne) mod._debutPanne = new Date(data.debutPanne);
+    if (data.largeur) mod.style.width = data.largeur;
+    if (data.hauteur) mod.style.height = data.hauteur;
+    if (data.arrets) {
+      data.arrets.forEach(cells => {
+        const tr = document.createElement("tr");
+        cells.forEach(c => {
+          const td = document.createElement("td");
+          td.textContent = c;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
   }
 
-  function formater(date) {
-    return date.toLocaleTimeString("fr-FR", { hour12: false });
+  // Affichage du chrono
+  function afficher() {
+    let total = mod._secondes;
+    if (mod._enPanne && mod._debutPanne) {
+      total += Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
+    }
+    compteur.textContent = duree(total);
   }
 
-  function duree(sec) {
-    const h = String(Math.floor(sec / 3600)).padStart(2, "0");
-    const m = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
-    const s = String(sec % 60).padStart(2, "0");
-    return `${h}:${m}:${s}`;
-  }
+  // Tick toutes les secondes
+  mod._timer = setInterval(afficher, 1000);
+  afficher();
 
-  // En panne : le chrono DÉMARRE
-  btnPanne.onclick = () => {
+  // Passer en panne
+  btnPanne.addEventListener("click", () => {
+    if (mod._enPanne) return;
     mod._enPanne = true;
     mod._debutPanne = new Date();
-    etat.textContent = "En panne";
+    etat.textContent = "EN PANNE";
     etat.className = "etat en-panne";
     btnPanne.disabled = true;
     btnMarche.disabled = false;
-    causeInput.value = "";
-  };
+    cause.focus();
 
-  // En marche : le chrono S'ARRÊTE et on enregistre l'arrêt
-  btnMarche.onclick = () => {
+    // Nouvelle ligne d'arrêt
+    const tr = document.createElement("tr");
+    const date = new Date();
+    tr.innerHTML = `
+      <td>${date.toLocaleDateString("fr-FR")}</td>
+      <td>${date.toLocaleTimeString("fr-FR")}</td>
+      <td>-</td>
+      <td>-</td>
+      <td>-</td>
+    `;
+    tbody.appendChild(tr);
+    mod._ligneEnCours = tr;
+  });
+
+  // Revenir en marche
+  btnMarche.addEventListener("click", () => {
     if (!mod._enPanne) return;
     mod._enPanne = false;
-    const fin = new Date();
-    const dureeSec = Math.floor((fin - mod._debutPanne) / 1000);
-    mod._secondes += dureeSec;
-
-    nbArrets++;
-    const tr = document.createElement("tr");
-    [nbArrets, formater(mod._debutPanne), formater(fin), duree(dureeSec), causeInput.value || "-"]
-      .forEach(v => { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); });
-    tbody.appendChild(tr);
-
+    mod._secondes += Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
     mod._debutPanne = null;
-    etat.textContent = "En marche";
+    etat.textContent = "EN MARCHE";
     etat.className = "etat en-marche";
     btnMarche.disabled = true;
     btnPanne.disabled = false;
-    causeInput.value = "";
-    majCompteur();
-    sauvegarder();
-  };
 
-  btnValider.onclick = () => {
-    if (mod._enPanne && causeInput.value.trim() !== "") {
-      causeInput.style.borderColor = "#2f9e44";
-      setTimeout(() => causeInput.style.borderColor = "", 800);
+    // Finaliser la ligne d'arrêt
+    if (mod._ligneEnCours) {
+      const tds = mod._ligneEnCours.querySelectorAll("td");
+      tds[2].textContent = new Date().toLocaleTimeString("fr-FR");
+      tds[3].textContent = duree(mod._secondes - (mod._dureeAvant || 0));
+      mod._dureeAvant = mod._secondes;
+      mod._ligneEnCours = null;
     }
-  };
+    afficher();
+  });
 
-  mod.querySelector(".btn-suppr").onclick = () => {
+  // Cause : touche Entrée
+  cause.addEventListener("keydown", e => {
+    if (e.key === "Enter" && mod._ligneEnCours) {
+      const tds = mod._ligneEnCours.querySelectorAll("td");
+      tds[4].textContent = cause.value.trim() || "-";
+      cause.value = "";
+      sauvegarder();
+    }
+  });
+
+  // Supprimer le module
+  mod.querySelector(".btn-suppr").addEventListener("click", () => {
     if (confirm("Supprimer ce module ?")) {
+      clearInterval(mod._timer);
       mod.remove();
       sauvegarder();
     }
-  };
-
-  // Glisser-déposer pour réorganiser
-  const poignee = mod.querySelector(".poignee");
-  poignee.addEventListener("dragstart", e => {
-    e.dataTransfer.setData("text/plain", Array.from(mod.parentNode.children).indexOf(mod));
   });
-  mod.addEventListener("dragover", e => { e.preventDefault(); mod.classList.add("drag-over"); });
+
+  // ── Drag & drop pour réorganiser ──
+  mod.addEventListener("dragstart", () => { moduleDeplace = mod; });
+  mod.addEventListener("dragend", () => {
+    moduleDeplace = null;
+    document.querySelectorAll(".module").forEach(m => m.classList.remove("drag-over"));
+  });
+  mod.addEventListener("dragover", e => {
+    e.preventDefault();
+    if (moduleDeplace && moduleDeplace !== mod) mod.classList.add("drag-over");
+  });
   mod.addEventListener("dragleave", () => mod.classList.remove("drag-over"));
   mod.addEventListener("drop", e => {
     e.preventDefault();
     mod.classList.remove("drag-over");
-    const idx = parseInt(e.dataTransfer.getData("text/plain"));
-    const conteneur = document.getElementById("conteneur");
-    const modules = Array.from(conteneur.children);
-    const deplace = modules[idx];
-    if (deplace && deplace !== mod) {
-      const rect = mod.getBoundingClientRect();
-      const avant = e.clientX < rect.left + rect.width / 2;
-      conteneur.insertBefore(deplace, avant ? mod : mod.nextSibling);
+    if (moduleDeplace && moduleDeplace !== mod) {
+      conteneur.insertBefore(moduleDeplace, mod);
       sauvegarder();
     }
   });
 
-  document.getElementById("conteneur").appendChild(mod);
-
-  // Restauration de la taille du module
-  if (data && data.largeur) mod.style.width = data.largeur;
-  if (data && data.hauteur) mod.style.height = data.hauteur;
-
-  // Restauration de l'état
-  if (data) {
-    mod._secondes = data.secondes || 0;
-    nbArrets = Array.isArray(data.arrets) ? data.arrets.length : 0;
-    if (data.enPanne && data.debutPanne) {
-      mod._enPanne = true;
-      mod._debutPanne = new Date(data.debutPanne);
-      etat.textContent = "En panne";
-      etat.className = "etat en-panne";
-      btnPanne.disabled = true;
-      btnMarche.disabled = false;
-    } else {
-      majCompteur();
-    }
-  }
-
-  // Timer global du module
-  setInterval(() => {
-    if (mod._enPanne && mod._debutPanne) {
-      const total = mod._secondes + Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
-      const h = String(Math.floor(total / 3600)).padStart(2, "0");
-      const m = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
-      const s = String(total % 60).padStart(2, "0");
-      compteurEl.textContent = `${h}:${m}:${s}`;
-    }
-  }, 1000);
-
-  majCompteur();
+  conteneur.appendChild(mod);
 }
 
 // Export Excel
 function exporterExcel() {
-  const lignes = [["Module", "Arrêt n°", "Début", "Fin", "Durée", "Cause"]];
+  const lignes = [["Module", "Date", "Heure début", "Heure fin", "Durée", "Cause"]];
   let totalGlobal = 0;
 
   document.querySelectorAll(".module").forEach(mod => {
     const nom = mod.querySelector(".nom").value;
     let totalMod = 0;
-    Array.from(mod.querySelectorAll("tbody tr")).forEach((tr, i) => {
+    Array.from(mod.querySelectorAll("tbody tr")).forEach(tr => {
       const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent);
       const [h, m, s] = cells[3].split(":").map(Number);
-      const dureeSec = h * 3600 + m * 60 + s;
-      totalMod += dureeSec;
+      totalMod += h * 3600 + m * 60 + s;
       lignes.push([nom, ...cells]);
     });
-    if (totalMod === 0) lignes.push([nom, "-", "-", "-", "00:00:00", "-"]);
+    if (totalMod > 0) lignes.push([nom, "Total", "", "", duree(totalMod), ""]);
     totalGlobal += totalMod;
-    lignes.push([nom, "Total", "", "", duree(totalMod), ""]);
   });
 
   lignes.push(["TOTAL GÉNÉRAL", "", "", "", duree(totalGlobal), ""]);
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(lignes);
-  ws["!cols"] = [{ wch: 15 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
+  ws["!cols"] = [{ wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
   XLSX.utils.book_append_sheet(wb, ws, "Arrêts");
   XLSX.writeFile(wb, "arrets_" + new Date().toLocaleDateString("fr-FR").replace(/\//g, "-") + ".xlsx");
 }
 
-// Sauvegarde (avec correction du double comptage)
+// Sauvegarde
 function sauvegarder() {
   const data = [];
   document.querySelectorAll(".module").forEach(mod => {
