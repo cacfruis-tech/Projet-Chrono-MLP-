@@ -6,243 +6,485 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #1e1e2e; }
-  body { display: flex; flex-direction: column; color: #eee; }
-  h1 { text-align: center; padding: 10px 0 6px; font-size: 22px; }
-  .barre-haut { display: flex; gap: 10px; justify-content: center; padding-bottom: 10px; }
-  button { padding: 10px 18px; border: none; border-radius: 8px; cursor: pointer;
-           font-size: 14px; font-weight: bold; color: #fff; }
+
+  body { background: #1e1e2e; color: #eee; padding: 20px; }
+
+  h1 { text-align: center; margin-bottom: 20px; color: #fff; }
+
+  .barre-haut { display: flex; gap: 10px; justify-content: center; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+
+  button {
+    padding: 10px 18px; border: none; border-radius: 8px;
+    cursor: pointer; font-size: 14px; font-weight: bold; color: #fff;
+  }
   .btn-ajouter { background: #2f9e44; }
-  .btn-export  { background: #1971c2; }
+  .btn-export { background: #1971c2; }
+  .btn-grille { background: #6c4bd4; }
+  .btn-grille.actif { background: #2fa84a; }
 
-  #tableau { flex: 1; position: relative; overflow: hidden; margin: 0 10px 10px;
-             background: repeating-linear-gradient(#26263a 0 1px, transparent 1px 30px),
-                         repeating-linear-gradient(90deg, #26263a 0 1px, transparent 1px 30px);
-             border-radius: 12px; }
+  /* ── Contrôles de zoom ── */
+  .zoom-controles {
+    display: flex; align-items: center; gap: 6px;
+    background: #2b2b3d; border-radius: 8px; padding: 4px;
+  }
+  .zoom-controles button { background: #444; padding: 8px 14px; }
+  .zoom-controles button:disabled { opacity: .35; cursor: not-allowed; }
+  .zoom-valeur {
+    min-width: 62px; background: #1e1e2e; color: #ffd43b;
+    padding: 8px 6px; border-radius: 6px; text-align: center;
+  }
 
-  .module { position: absolute; background: #2b2b3d; border-radius: 12px; padding: 12px;
-            box-shadow: 0 4px 10px rgba(0,0,0,.4); display: flex; flex-direction: column; gap: 8px;
-            min-width: 280px; min-height: 260px; }
-  .poignee { cursor: grab; color: #888; font-size: 18px; text-align: center;
-             background: #1e1e2e; border-radius: 6px; padding: 2px 0; user-select: none; }
-  .module.deplace { opacity: .9; box-shadow: 0 10px 25px rgba(0,0,0,.7); }
-  h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; }
-  .nom { flex: 1; background: #1e1e2e; border: 1px solid #444; color: #fff;
-         border-radius: 6px; padding: 6px; font-size: 15px; min-width: 0; }
-  .suppr { background: #c92a2a; border: none; color: #fff; border-radius: 6px;
-           cursor: pointer; padding: 5px 9px; }
-  .chrono { font-size: 26px; text-align: center; font-weight: bold; font-family: monospace; }
-  .boutons { display: flex; gap: 8px; }
-  .btn-marche { flex: 1; background: #2f9e44; padding: 10px 0; }
-  .btn-panne  { flex: 1; background: #e03131; padding: 10px 0; }
-  .btn-zero   { background: #555; padding: 8px 0; }
+  /* ── Zone qui défile : la scène zoomée est dedans ── */
+  #zone {
+    overflow: auto;
+    border-radius: 12px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  #zone::-webkit-scrollbar { display: none; }
 
-  .tableau-arrets { flex: 1; overflow: hidden; border-radius: 8px; }
-  table { width: 100%; height: 100%; border-collapse: collapse; font-size: 12px; }
+  /* ── Tableau libre (post-it) avec grille de points en fond ── */
+  #conteneur {
+    position: relative;
+    min-height: 1400px;
+    background-image: radial-gradient(#3a3a52 1.5px, transparent 1.5px);
+    background-size: 24px 24px;
+    border-radius: 12px;
+    transform-origin: 0 0;
+  }
+
+  .module {
+    position: absolute;
+    background: #2b2b3d; border-radius: 12px; padding: 15px;
+    width: 384px; min-width: 300px; max-width: 800px;
+    height: 528px; min-height: 300px;
+    resize: both; overflow: auto;
+    box-shadow: 0 4px 10px rgba(0,0,0,.4);
+    display: flex; flex-direction: column; gap: 10px;
+
+    /* barres de défilement masquées (la molette fonctionne toujours) */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .module::-webkit-scrollbar { display: none; }
+
+  .module.en-deplacement {
+    z-index: 1000;
+    opacity: .92;
+    box-shadow: 0 12px 28px rgba(0,0,0,.6);
+  }
+
+  .poignee {
+    cursor: grab; color: #888; font-size: 20px;
+    margin-right: 8px; user-select: none; touch-action: none;
+    flex-shrink: 0;
+  }
+  .en-deplacement .poignee { cursor: grabbing; }
+
+  h2 { display: flex; align-items: center; gap: 10px; font-size: 16px; flex-shrink: 0; }
+  .nom {
+    flex: 1; min-width: 0; background: #1e1e2e; border: 1px solid #444; color: #fff;
+    border-radius: 6px; padding: 6px; font-size: 15px;
+  }
+
+  .etat {
+    padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold;
+    flex-shrink: 0; white-space: nowrap;
+  }
+  .etat.en-marche { background: #2f9e44; }
+  .etat.en-panne { background: #e03131; }
+
+  .compteur {
+    font-size: 34px; text-align: center; font-family: monospace;
+    background: #1e1e2e; border-radius: 8px; padding: 8px; color: #ffd43b;
+    flex-shrink: 0;
+  }
+
+  .boutons { display: flex; gap: 10px; flex-shrink: 0; }
+  .btn-marche { flex: 1; background: #2f9e44; }
+  .btn-panne { flex: 1; background: #e03131; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  .zone-cause { display: flex; gap: 8px; flex-shrink: 0; }
+  .cause {
+    flex: 1; background: #1e1e2e; border: 1px solid #444; color: #fff;
+    border-radius: 6px; padding: 6px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td { border: 1px solid #444; padding: 4px; text-align: center; }
   th { background: #1e1e2e; }
 
-  .poignee-redim { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
-                   cursor: nwse-resize;
-                   background: linear-gradient(135deg, transparent 40%, #1971c2 40%); }
+  .btn-suppr { background: #862e2e; align-self: center; flex-shrink: 0; }
 </style>
 </head>
 <body>
 
-<h1>📋 Suivi des arrêts de production</h1>
+<h1>Suivi des arrêts de production</h1>
+
 <div class="barre-haut">
-  <button class="btn-ajouter" onclick="ajouterModule()">➕ Ajouter un module</button>
-  <button class="btn-export" onclick="exporter()">📊 Exporter en Excel</button>
+  <button class="btn-ajouter" onclick="ajouterModule()">+ Ajouter un module</button>
+  <button class="btn-export" onclick="exporterExcel()">📊 Exporter en Excel</button>
+  <button class="btn-grille" id="btnGrille" onclick="toggleGrille()">🧲 Grille : OFF</button>
+
+  <div class="zoom-controles">
+    <button id="btnDezoom" onclick="changerZoom(-0.1)" title="Dézoomer">➖</button>
+    <button class="zoom-valeur" id="zoomValeur" onclick="definirZoom(1)" title="Revenir à 100 %">100%</button>
+    <button id="btnZoom" onclick="changerZoom(0.1)" title="Zoomer">➕</button>
+  </div>
 </div>
-<div id="tableau"></div>
+
+<div id="zone">
+  <div id="conteneur"></div>
+</div>
 
 <script>
-const tableau = document.getElementById("tableau");
-let compteur = 0;
+const conteneur = document.getElementById("conteneur");
+const zone = document.getElementById("zone");
 
-// ===== Ajouter un module =====
-function ajouterModule(nomInitial = "", data = null) {
-  compteur++;
+// ── ZOOM : 100 % = taille actuelle (max), 50 % = 2 fois plus petit (min) ──
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 1;
+let zoom = 1;
+
+function definirZoom(valeur) {
+  zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(valeur * 100) / 100));
+  conteneur.style.transform = "scale(" + zoom + ")";
+  // le conteneur zoomé occupe toute la largeur visible (plus de place pour les modules)
+  conteneur.style.width = (100 / zoom) + "%";
+  // zone de défilement ajustée à la hauteur réelle après zoom
+  zone.style.height = "";
+  conteneur.style.marginBottom = (-(1 - zoom) * conteneur.offsetHeight) + "px";
+
+  document.getElementById("zoomValeur").textContent = Math.round(zoom * 100) + "%";
+  document.getElementById("btnDezoom").disabled = zoom <= ZOOM_MIN;
+  document.getElementById("btnZoom").disabled = zoom >= ZOOM_MAX;
+  localStorage.setItem("suiviArretsZoom", String(zoom));
+}
+
+function changerZoom(delta) {
+  definirZoom(zoom + delta);
+}
+
+// Ctrl + molette sur le tableau pour zoomer / dézoomer
+zone.addEventListener("wheel", e => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  changerZoom(e.deltaY > 0 ? -0.05 : 0.05);
+}, { passive: false });
+
+// ── Grille / aimantation ──
+const TAILLE_GRILLE = 24;
+let grilleActive = false;
+
+function caler(valeur) {
+  return Math.round(valeur / TAILLE_GRILLE) * TAILLE_GRILLE;
+}
+
+function toggleGrille() {
+  grilleActive = !grilleActive;
+  const btn = document.getElementById("btnGrille");
+  btn.classList.toggle("actif", grilleActive);
+  btn.textContent = grilleActive ? "🧲 Grille : ON" : "🧲 Grille : OFF";
+  localStorage.setItem("suiviArretsGrille", grilleActive ? "1" : "0");
+
+  if (grilleActive) {
+    // aligne immédiatement tous les modules existants
+    document.querySelectorAll(".module").forEach(m => {
+      m.style.left = caler(parseFloat(m.style.left) || 0) + "px";
+      m.style.top  = caler(parseFloat(m.style.top)  || 0) + "px";
+    });
+    sauvegarder();
+  }
+}
+
+// ── Tailles minimales ──
+// Largeur min : poignée + nom + badge d'état ne se déforment pas
+// Hauteur min : le bouton "Supprimer" reste visible
+function calculerMinimums(mod) {
+  const cs = getComputedStyle(mod);
+  const padG = parseFloat(cs.paddingLeft);
+  const padD = parseFloat(cs.paddingRight);
+  const padB = parseFloat(cs.paddingBottom);
+
+  const h2 = mod.querySelector("h2");
+  const poignee = mod.querySelector(".poignee");
+  const etat = mod.querySelector(".etat");
+  const gap = parseFloat(getComputedStyle(h2).columnGap) || 10;
+  const margePoignee = parseFloat(getComputedStyle(poignee).marginRight) || 0;
+
+  // le texte le plus large du badge ("EN MARCHE" ou "EN PANNE")
+  // (offsetWidth ignore le zoom, donc les mesures restent exactes)
+  const texteActuel = etat.textContent;
+  const classeActuelle = etat.className;
+  etat.textContent = "EN MARCHE";
+  const largeurBadge = etat.offsetWidth;
+  etat.textContent = "EN PANNE";
+  const largeurBadge2 = etat.offsetWidth;
+  etat.textContent = texteActuel;
+  etat.className = classeActuelle;
+
+  const largeurMin = Math.ceil(
+    padG + padD
+    + poignee.offsetWidth + margePoignee
+    + 90                                   // largeur mini lisible du champ nom
+    + Math.max(largeurBadge, largeurBadge2)
+    + gap * 2
+  );
+
+  // Hauteur minimale : jusqu'au bas du bouton Supprimer
+  const suppr = mod.querySelector(".btn-suppr");
+  const hauteurMin = Math.ceil(suppr.offsetTop + suppr.offsetHeight + padB);
+
+  mod.style.minWidth = Math.max(largeurMin, 300) + "px";
+  mod.style.minHeight = hauteurMin + "px";
+
+  // si le module est déjà plus petit que ces minimums, on le remet au minimum
+  if (mod.offsetWidth < parseFloat(mod.style.minWidth)) mod.style.width = mod.style.minWidth;
+  if (mod.offsetHeight < parseFloat(mod.style.minHeight)) mod.style.height = mod.style.minHeight;
+}
+
+function duree(s) {
+  s = Math.max(0, s);
+  const h = String(Math.floor(s / 3600)).padStart(2, "0");
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  const sec = String(s % 60).padStart(2, "0");
+  return h + ":" + m + ":" + sec;
+}
+
+// Création d'un module
+function ajouterModule(nom = "Machine " + (conteneur.children.length + 1), data = null) {
   const mod = document.createElement("div");
   mod.className = "module";
-  mod._secondes = data ? data.secondes : 0;
-  mod._enPanne = data ? data.enPanne : false;
-  mod._debutPanne = null;
-
-  const posX = data ? data.posX : 20 + (compteur - 1) * 40;
-  const posY = data ? data.posY : 20 + (compteur - 1) * 40;
-  mod.style.left = posX + "px";
-  mod.style.top = posY + "px";
-  mod.style.width = data ? data.largeur : "320px";
-  mod.style.height = data ? data.hauteur : "340px";
 
   mod.innerHTML = `
-    <div class="poignee">⠿⠿⠿</div>
     <h2>
-      <input class="nom" placeholder="Nom du module" value="${nomInitial || "Module " + compteur}">
-      <span class="etat"></span>
-      <button class="suppr">✖</button>
+      <span class="poignee">⠿</span>
+      <input class="nom" value="${nom}">
+      <span class="etat en-marche">EN MARCHE</span>
     </h2>
-    <div class="chrono">00:00:00</div>
+    <div class="compteur">00:00:00</div>
     <div class="boutons">
-      <button class="btn-marche">En marche</button>
-      <button class="btn-panne">En panne</button>
+      <button class="btn-marche" disabled>▶ Marche</button>
+      <button class="btn-panne">⏸ Panne</button>
     </div>
-    <button class="btn-zero">↺ Remettre le chrono à zéro</button>
-    <div class="tableau-arrets">
-      <table>
-        <thead><tr><th>Début</th><th>Fin</th><th>Durée</th><th>Cause</th></tr></thead>
-        <tbody></tbody>
-      </table>
+    <div class="zone-cause">
+      <input class="cause" placeholder="Cause de l'arrêt (Entrée pour valider)">
     </div>
-    <div class="poignee-redim"></div>`;
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Heure</th><th>Fin</th><th>Durée</th><th>Cause</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <button class="btn-suppr">🗑 Supprimer le module</button>
+  `;
 
-  tableau.appendChild(mod);
-
-  // ----- Boutons -----
+  const etat = mod.querySelector(".etat");
+  const compteur = mod.querySelector(".compteur");
   const btnMarche = mod.querySelector(".btn-marche");
   const btnPanne = mod.querySelector(".btn-panne");
-  const etat = mod.querySelector(".etat");
-  const chrono = mod.querySelector(".chrono");
+  const cause = mod.querySelector(".cause");
+  const tbody = mod.querySelector("tbody");
 
-  function majAffichage() {
-    if (mod._enPanne) {
-      chrono.textContent = fmt(mod._secondes + Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000));
-      chrono.style.color = "#ff6b6b";
-      etat.textContent = "EN PANNE"; etat.className = "etat";
-      etat.style.background = "#e03131";
-    } else {
-      chrono.textContent = fmt(mod._secondes);
-      chrono.style.color = "#fff";
-      etat.textContent = "EN MARCHE"; etat.className = "etat en-marche";
+  // État interne du chrono
+  mod._secondes = 0;
+  mod._enPanne = false;
+  mod._debutPanne = null;
+  mod._ligneEnCours = null;
+
+  // Position par défaut (cascade) si aucune position sauvegardée
+  const index = conteneur.children.length;
+  mod.style.left = (data && data.x !== undefined ? data.x : 24 + (index % 3) * 408) + "px";
+  mod.style.top  = (data && data.y !== undefined ? data.y : 24 + Math.floor(index / 3) * 552) + "px";
+
+  // Restauration des données
+  if (data) {
+    mod._secondes = data.secondes || 0;
+    mod._enPanne = data.enPanne || false;
+    if (data.debutPanne) mod._debutPanne = new Date(data.debutPanne);
+    if (data.largeur) mod.style.width = data.largeur;
+    if (data.hauteur) mod.style.height = data.hauteur;
+    if (data.arrets) {
+      data.arrets.forEach(cells => {
+        const tr = document.createElement("tr");
+        cells.forEach(c => {
+          const td = document.createElement("td");
+          td.textContent = c;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
     }
   }
 
-  btnMarche.onclick = () => {
-    if (mod._enPanne) {
-      const duree = Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
-      mod._secondes += duree;
-      const now = new Date();
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${mod._debutPanne.toLocaleTimeString("fr-FR")}</td>
-        <td>${now.toLocaleTimeString("fr-FR")}</td>
-        <td>${fmt(duree)}</td>
-        <td contenteditable></td><td style="display:none"></td>`;
-      mod.querySelector("tbody").appendChild(tr);
-      mod._enPanne = false; mod._debutPanne = null;
-      majAffichage(); sauvegarder();
+  // Affichage du chrono
+  function afficher() {
+    let total = mod._secondes;
+    if (mod._enPanne && mod._debutPanne) {
+      total += Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
     }
-  };
+    compteur.textContent = duree(total);
+  }
 
-  btnPanne.onclick = () => {
-    if (!mod._enPanne) {
-      mod._enPanne = true; mod._debutPanne = new Date();
-      majAffichage(); sauvegarder();
+  // Tick toutes les secondes
+  mod._timer = setInterval(afficher, 1000);
+  afficher();
+
+  // Passer en panne
+  btnPanne.addEventListener("click", () => {
+    if (mod._enPanne) return;
+    mod._enPanne = true;
+    mod._debutPanne = new Date();
+    etat.textContent = "EN PANNE";
+    etat.className = "etat en-panne";
+    btnPanne.disabled = true;
+    btnMarche.disabled = false;
+    cause.focus();
+
+    // Nouvelle ligne d'arrêt
+    const tr = document.createElement("tr");
+    const date = new Date();
+    tr.innerHTML = `
+      <td>${date.toLocaleDateString("fr-FR")}</td>
+      <td>${date.toLocaleTimeString("fr-FR")}</td>
+      <td>-</td>
+      <td>-</td>
+      <td>-</td>
+    `;
+    tbody.appendChild(tr);
+    mod._ligneEnCours = tr;
+  });
+
+  // Revenir en marche
+  btnMarche.addEventListener("click", () => {
+    if (!mod._enPanne) return;
+    mod._enPanne = false;
+    mod._secondes += Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
+    mod._debutPanne = null;
+    etat.textContent = "EN MARCHE";
+    etat.className = "etat en-marche";
+    btnMarche.disabled = true;
+    btnPanne.disabled = false;
+
+    // Finaliser la ligne d'arrêt
+    if (mod._ligneEnCours) {
+      const tds = mod._ligneEnCours.querySelectorAll("td");
+      tds[2].textContent = new Date().toLocaleTimeString("fr-FR");
+      tds[3].textContent = duree(mod._secondes - (mod._dureeAvant || 0));
+      mod._dureeAvant = mod._secondes;
+      mod._ligneEnCours = null;
     }
-  };
+    afficher();
+  });
 
-  mod.querySelector(".btn-zero").onclick = () => {
-    mod._secondes = 0; mod._enPanne = false; mod._debutPanne = null;
-    mod.querySelector("tbody").innerHTML = "";
-    majAffichage(); sauvegarder();
-  };
+  // Cause : touche Entrée
+  cause.addEventListener("keydown", e => {
+    if (e.key === "Enter" && mod._ligneEnCours) {
+      const tds = mod._ligneEnCours.querySelectorAll("td");
+      tds[4].textContent = cause.value.trim() || "-";
+      cause.value = "";
+      sauvegarder();
+    }
+  });
 
-  mod.querySelector(".suppr").onclick = () => {
-    if (confirm("Supprimer ce module ?")) { mod.remove(); sauvegarder(); }
-  };
+  // Supprimer le module
+  mod.querySelector(".btn-suppr").addEventListener("click", () => {
+    if (confirm("Supprimer ce module ?")) {
+      clearInterval(mod._timer);
+      mod.remove();
+      sauvegarder();
+    }
+  });
 
-  mod.querySelector(".nom").addEventListener("input", sauvegarder);
-
-  // ----- Déplacement -----
+  // ── Déplacement libre (post-it) : événements pointeur, sans blocage ──
+  // (les positions sont divisées par le zoom pour rester précises)
   const poignee = mod.querySelector(".poignee");
-  poignee.addEventListener("mousedown", e => {
+  let decalX = 0, decalY = 0;
+
+  poignee.addEventListener("pointerdown", e => {
     e.preventDefault();
-    const startX = e.clientX, startY = e.clientY;
-    const startL = mod.offsetLeft, startT = mod.offsetTop;
-    mod.classList.add("deplace");
+    const rect = mod.getBoundingClientRect();
+    const rectCont = conteneur.getBoundingClientRect();
+    decalX = (e.clientX - rect.left) / zoom;
+    decalY = (e.clientY - rect.top) / zoom;
+    mod.classList.add("en-deplacement");
+    poignee.setPointerCapture(e.pointerId);
 
     function bouger(ev) {
-      let l = startL + ev.clientX - startX;
-      let t = startT + ev.clientY - startY;
-      l = Math.max(0, Math.min(l, tableau.clientWidth - mod.offsetWidth));
-      t = Math.max(0, Math.min(t, tableau.clientHeight - mod.offsetHeight));
-      mod.style.left = l + "px"; mod.style.top = t + "px";
+      let x = (ev.clientX - rectCont.left) / zoom - decalX;
+      let y = (ev.clientY - rectCont.top) / zoom - decalY;
+      x = Math.max(0, x);
+      y = Math.max(0, y);
+      if (grilleActive) { x = caler(x); y = caler(y); }
+      mod.style.left = x + "px";
+      mod.style.top  = y + "px";
     }
-    function relacher() {
-      document.removeEventListener("mousemove", bouger);
-      document.removeEventListener("mouseup", relacher);
-      mod.classList.remove("deplace");
+
+    function lacher(ev) {
+      poignee.releasePointerCapture(ev.pointerId);
+      poignee.removeEventListener("pointermove", bouger);
+      poignee.removeEventListener("pointerup", lacher);
+      poignee.removeEventListener("pointercancel", lacher);
+      mod.classList.remove("en-deplacement");
       sauvegarder();
     }
-    document.addEventListener("mousemove", bouger);
-    document.addEventListener("mouseup", relacher);
+
+    poignee.addEventListener("pointermove", bouger);
+    poignee.addEventListener("pointerup", lacher);
+    poignee.addEventListener("pointercancel", lacher);
   });
 
-  // ----- Redimensionnement -----
-  const redim = mod.querySelector(".poignee-redim");
-  redim.addEventListener("mousedown", e => {
-    e.preventDefault(); e.stopPropagation();
-    const startX = e.clientX, startY = e.clientY;
-    const startW = mod.offsetWidth, startH = mod.offsetHeight;
+  // Sauvegarde de la taille après redimensionnement
+  mod.addEventListener("mouseup", sauvegarder);
 
-    function bouger(ev) {
-      mod.style.width = Math.max(280, startW + ev.clientX - startX) + "px";
-      mod.style.height = Math.max(260, startH + ev.clientY - startY) + "px";
-    }
-    function relacher() {
-      document.removeEventListener("mousemove", bouger);
-      document.removeEventListener("mouseup", relacher);
-      sauvegarder();
-    }
-    document.addEventListener("mousemove", bouger);
-    document.addEventListener("mouseup", relacher);
-  });
+  conteneur.appendChild(mod);
 
-  majAffichage();
-  return mod;
+  // calcul des minimums une fois le module dans la page
+  calculerMinimums(mod);
 }
 
-function fmt(s) {
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
-}
-
-// ===== Export Excel =====
-function exporter() {
-  const lignes = [["Module", "Début", "Fin", "Durée", "Cause", "Temps total d'arrêt"]];
-  let totalGlobal = 0;
+// Export Excel
+function exporterExcel() {
+  const lignes = [];
 
   document.querySelectorAll(".module").forEach(mod => {
-    let secondes = mod._secondes;
-    if (mod._enPanne && mod._debutPanne) {
-      secondes += Math.floor((Date.now() - mod._debutPanne.getTime()) / 1000);
-    }
-    totalGlobal += secondes;
     const nom = mod.querySelector(".nom").value;
+    const trs = Array.from(mod.querySelectorAll("tbody tr"));
+    if (trs.length === 0) return; // module sans arrêt : on ne l'exporte pas
 
-    const trs = mod.querySelectorAll("tbody tr");
-    if (trs.length === 0) {
-      lignes.push([nom, "", "", "", "", fmt(secondes)]);
-    } else {
-      trs.forEach((tr, i) => {
-        const tds = tr.querySelectorAll("td");
-        lignes.push([i === 0 ? nom : "", tds[0].textContent, tds[1].textContent,
-                     tds[2].textContent, tds[3].textContent, i === 0 ? fmt(secondes) : ""]);
-      });
-    }
-    lignes.push(["", "", "", "", "", ""]);
+    let totalMod = 0;
+
+    trs.forEach((tr, i) => {
+      const cells = Array.from(tr.querySelectorAll("td")).map(td => td.textContent);
+      // cells = [date, heure début, heure fin, durée, cause]
+      const [h, m, s] = cells[3].split(":").map(Number);
+      totalMod += (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
+
+      lignes.push([
+        i === 0 ? nom : "",   // nom du module seulement sur la 1re ligne
+        i + 1,                // numéro de l'arrêt
+        cells[1],             // heure début
+        cells[2],             // heure fin
+        cells[3],             // durée
+        cells[4]              // cause
+      ]);
+    });
+
+    // Ligne Total : nombre d'arrêts + durée cumulée
+    lignes.push(["Total", trs.length, "", "", duree(totalMod), ""]);
+    // Ligne vide entre les modules
+    lignes.push([]);
   });
-
-  lignes.push(["TOTAL GÉNÉRAL", "", "", "", "", fmt(totalGlobal)]);
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(lignes);
-  ws["!cols"] = [{ wch: 15 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 25 }, { wch: 18 }];
+  ws["!cols"] = [{ wch: 15 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 30 }];
   XLSX.utils.book_append_sheet(wb, ws, "Arrêts");
   XLSX.writeFile(wb, "arrets_" + new Date().toLocaleDateString("fr-FR").replace(/\//g, "-") + ".xlsx");
 }
 
-// ===== Sauvegarde / Chargement =====
+// Sauvegarde
 function sauvegarder() {
   const data = [];
   document.querySelectorAll(".module").forEach(mod => {
@@ -254,25 +496,44 @@ function sauvegarder() {
       nom: mod.querySelector(".nom").value,
       secondes: mod._secondes,
       enPanne: mod._enPanne,
-      posX: parseInt(mod.style.left),
-      posY: parseInt(mod.style.top),
-      largeur: mod.style.width,
-      hauteur: mod.style.height,
+      debutPanne: mod._debutPanne ? mod._debutPanne.getTime() : null,
+      largeur: mod.style.width || "",
+      hauteur: mod.style.height || "",
+      x: parseFloat(mod.style.left) || 0,
+      y: parseFloat(mod.style.top) || 0,
       arrets: Array.from(mod.querySelectorAll("tbody tr")).map(tr =>
-        Array.from(tr.querySelectorAll("td")).slice(0, 4).map(td => td.textContent))
+        Array.from(tr.querySelectorAll("td")).map(td => td.textContent)
+      )
     });
   });
   localStorage.setItem("suiviArrets", JSON.stringify(data));
 }
 
+// Chargement
 function charger() {
   const data = JSON.parse(localStorage.getItem("suiviArrets") || "[]");
-  if (data.length === 0) ajouterModule();
-  else data.forEach(d => ajouterModule(d.nom, d));
+  if (data.length === 0) {
+    ajouterModule();
+  } else {
+    data.forEach(d => ajouterModule(d.nom, d));
+  }
+
+  // restaure l'état du bouton Grille
+  if (localStorage.getItem("suiviArretsGrille") === "1") {
+    toggleGrille();
+  }
+
+  // restaure le niveau de zoom
+  const zoomSauve = parseFloat(localStorage.getItem("suiviArretsZoom"));
+  definirZoom(isNaN(zoomSauve) ? 1 : zoomSauve);
 }
 
 charger();
+
+// Sauvegarde automatique toutes les 30 secondes
 setInterval(sauvegarder, 30000);
+
+// Sauvegarde à la fermeture de la page
 window.addEventListener("beforeunload", sauvegarder);
 </script>
 
